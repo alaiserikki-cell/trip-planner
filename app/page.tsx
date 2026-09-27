@@ -1,5 +1,6 @@
 import { ArrowRight, ArrowDown } from "lucide-react";
 import CreateTripForm from "@/components/CreateTripForm";
+import RecentTrips from "@/components/RecentTrips";
 import { CurvedText, Underline, Wordmark } from "@/components/Flourish";
 import { coverPhoto } from "@/lib/unsplash";
 
@@ -64,6 +65,8 @@ export default async function Home() {
           </a>
         )}
       </section>
+
+      <RecentTrips />
 
       <section id="how" className="mx-auto w-full max-w-6xl px-5 py-20">
         <p className="text-center text-xs font-semibold uppercase tracking-[0.2em] text-brand">For friends in different cities, however many of you there are</p>

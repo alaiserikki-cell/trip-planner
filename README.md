@@ -40,7 +40,7 @@ Keys are read from the environment only, and only on the server. RLS is on for e
 
 ## My trips
 
-`/trips` lists every trip started or joined on that phone or browser: in progress first, then past (locked) trips with their destination and dates. There are no accounts, so the browser sends the device tokens it already holds and the server only returns trips those tokens prove it belongs to.
+`/trips` lists every trip started or joined on that phone or browser: in progress first, then previous (locked) trips with their destination and dates. The home page shows the latest three of each under "Your trips". There are no accounts, so the browser sends the device tokens it already holds and the server only returns trips those tokens prove it belongs to.
 
 ## Privacy rules enforced in the API (`lib/engine.ts → buildView`)
 
