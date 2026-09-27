@@ -1,0 +1,56 @@
+# Plan it: group trip decider
+
+For 3–8 friends in different cities who keep failing to plan a trip over WhatsApp. Everyone answers privately, the app finds three trips that work for the group, everyone votes, and the organiser locks one.
+
+## Run it
+
+```bash
+npm install
+cp .env.example .env.local   # add keys (optional for a first try)
+npm run dev
+```
+
+With no keys, the app still runs end to end. It uses an offline planner, gradient covers and an in-memory store that resets when the server restarts.
+
+### Connecting the services
+
+| Service | Env vars | What it does |
+|---|---|---|
+| Gemini | `GEMINI_API_KEY`, optional `GEMINI_MODEL` | Generates the 3 options, writes each person's fit sentence, and generates round 2 from the votes |
+| Unsplash | `UNSPLASH_ACCESS_KEY` | Cover photo per destination, credited on the card |
+| Supabase | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | Stores everything. Run `supabase/schema.sql` first |
+
+Keys are read from the environment only, and only on the server. RLS is on for every table with no policies, so the public anon key can't read anything.
+
+## How it works
+
+1. **Create.** The organiser sets the name, the travel window, trip length and deadline (48h by default), and can list friends' names or skip that. They get one link, a QR code and a WhatsApp share button.
+   - **Open invite:** friends who aren't listed add their own name from the link (up to 8 people). The organiser can remove a name until that person has answered. Options only generate automatically once at least 3 people have joined and all have answered; otherwise the deadline flow applies.
+2. **Answer privately.** Each friend picks their name. That name is then tied to their device, and the organiser can reset it if they switch phones. They fill in city, dates (Available / Maybe / No), budget and how firm it is, trip types (ranked, max 3), travel modes, deal-breakers and a free-text answer. They can edit until options are generated.
+3. **Track.** The organiser sees ticks, never answers, plus a Nudge button that copies a reminder. If the deadline passes with people missing, they can extend by 24h or go ahead. Anyone missing shows as "No preferences submitted" on every option.
+4. **Generate.**
+   - *Step 1, in code* (`lib/constraints.ts`): finds the best date windows (most Available, then Maybe), sets the budget ceiling from the lowest hard limit, and combines the deal-breakers.
+   - *Step 2, Gemini* (`lib/planner.ts`): writes 3 options that respect those constraints, using structured output.
+   - *Code again:* scores fit per person (dates / budget / trip type / travel as green, amber or red), then ranks options by the worst individual fit first and the average second.
+5. **Vote.** Each person picks I'm in / I'd go if needed / I'm out, and "out" needs a reason. Votes stay hidden until everyone has voted, then everyone sees each vote. After that, changing a vote needs a reason and is shown to the group.
+6. **Round 2 / stalemate.** If every option has an "out", Gemini reads the votes and reasons and writes 3 new options, never repeating a round 1 destination. If round 2 also fails, the app shows the best-supported option and exactly what blocks it, and for whom.
+7. **Lock.** Only the organiser can lock. Locking an option someone voted out on needs a confirmation that names who's left out. The result is a shareable trip card (image) plus a dated checklist of next steps. Nothing gets booked.
+
+## Privacy rules enforced in the API (`lib/engine.ts → buildView`)
+
+- Nobody else's preferences are ever sent to a browser.
+- Budget shows only as Within / Stretch / Over. AI-written sentences are rejected and replaced with a template if they contain an amount.
+- Deal-breakers are shown with the person's name by default ("Karan ruled out treks"). Anyone can opt in to "Keep my deal-breakers anonymous", which shows theirs as "Someone in the group ruled out…". Anonymity is always opt-in, never the default.
+- Votes are hidden until voting closes.
+
+## Layout
+
+```
+app/api/trips/…      route handlers (create, view, join, preferences, deadline, generate, vote, close-voting, lock, reset-claim, remove-member)
+app/t/[id]/page.tsx  the single trip page; what it shows depends on status and role
+lib/constraints.ts   deterministic step 1, fit scoring, ranking, blockers, checklist
+lib/planner.ts       Gemini planner + offline fallback
+lib/engine.ts        generation runs, voting rounds, per-viewer views
+lib/store.ts         Supabase store + in-memory fallback
+supabase/schema.sql  database schema
+```
