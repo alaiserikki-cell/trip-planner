@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse, after } from "next/server";
 import { eachDate } from "@/lib/dates";
-import { memberByToken, readyToGenerate, runGeneration } from "@/lib/engine";
+import { memberByToken, readyToGenerate, runGeneration, runPreview } from "@/lib/engine";
 import { auth, fail, type Ctx } from "@/lib/http";
 import { getStore } from "@/lib/store";
 import {
@@ -76,6 +76,8 @@ export async function POST(req: NextRequest, { params }: Ctx) {
     await store.updateMember(me.id, { submittedAt: prefs.updatedAt });
   }
 
+  // Everyone's in: final options. Otherwise refresh the early look (runs once 2+ have answered).
   if (readyToGenerate(members)) after(() => runGeneration(id, 1, ["collecting"]));
+  else after(() => runPreview(id));
   return NextResponse.json({ ok: true });
 }

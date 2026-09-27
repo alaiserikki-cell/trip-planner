@@ -52,7 +52,8 @@ async function generateJson<T extends z.ZodType>(schema: T, system: string, prom
       responseJsonSchema: toGeminiSchema(z.toJSONSchema(schema)),
     },
   };
-  // Busy (503) and rate-limited (429) responses are usually gone within seconds.
+  // "Busy" (503) usually clears within seconds, so retry it. "Quota used up" (429)
+  // won't clear until the quota resets, and every retry spends more of it.
   const delays = [2000, 5000, 10000];
   for (let attempt = 0; ; attempt++) {
     try {
@@ -61,7 +62,7 @@ async function generateJson<T extends z.ZodType>(schema: T, system: string, prom
       return schema.parse(JSON.parse(res.text));
     } catch (e) {
       const status = (e as { status?: number }).status;
-      if ((status !== 503 && status !== 429) || attempt >= delays.length) throw e;
+      if (status !== 503 || attempt >= delays.length) throw e;
       await new Promise((r) => setTimeout(r, delays[attempt]));
     }
   }

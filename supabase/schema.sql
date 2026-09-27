@@ -16,8 +16,13 @@ create table if not exists trips (
   generation_started_at timestamptz,
   generation_error text,
   voting_closed_round int not null default 0,
+  preview_started_at timestamptz,                  -- early look is being planned
+  preview_key text,                                -- which answers the early look used
   created_at timestamptz not null default now()
 );
+-- For databases created before the early look existed:
+alter table trips add column if not exists preview_started_at timestamptz;
+alter table trips add column if not exists preview_key text;
 
 create table if not exists trip_members (
   id uuid primary key,

@@ -52,6 +52,8 @@ export async function POST(req: NextRequest) {
     generationStartedAt: null,
     generationError: null,
     votingClosedRound: 0,
+    previewStartedAt: null,
+    previewKey: null,
     createdAt: now.toISOString(),
   };
   const token = randomUUID();

@@ -3,6 +3,7 @@
 import { use, useEffect, useState } from "react";
 import Link from "next/link";
 import { CheckCircle2, Clock, RefreshCw, Sparkles } from "lucide-react";
+import EarlyLook from "@/components/EarlyLook";
 import LockedTrip from "@/components/LockedTrip";
 import NamePicker from "@/components/NamePicker";
 import OptionsBoard from "@/components/OptionsBoard";
@@ -221,11 +222,11 @@ function Body({ view, identity, url, isNew, refresh }: { view: TripView; identit
             <div className="flex-1">
               <p className="font-display text-xl font-bold">You&apos;re in</p>
               <p className="mt-1 text-sm text-muted">
-                {members.length < 3
-                  ? `${members.length} ${members.length === 1 ? "person" : "people"} so far. Options appear once at least 3 people have joined and answered, or at the deadline. Friends can add themselves from the link.`
+                {members.length - waitingOn.length < 2
+                  ? "Waiting for one more person to answer. The first trip options appear as soon as 2 people have. Friends can add themselves from the link."
                   : waitingOn.length
-                    ? `Waiting on ${waitingOn.length} more. Options appear as soon as everyone has answered, or at the deadline.`
-                    : "Everyone has answered. Options are on their way."}
+                    ? `Waiting on ${waitingOn.length} more. Below is an early look based on everyone who's answered so far. Voting opens once everyone's in, or at the deadline.`
+                    : "Everyone has answered. Final options are on their way."}
               </p>
               <p className="mt-3 flex items-center gap-1.5 text-sm">
                 <Clock size={14} className="text-muted" /> {timeLeft(trip.deadline, view.now)}
@@ -238,6 +239,8 @@ function Body({ view, identity, url, isNew, refresh }: { view: TripView; identit
           </div>
         </div>
       )}
+
+      {meView.submitted && !editing && <EarlyLook view={view} />}
 
       {isOrganiser && (
         <Tracker

@@ -18,6 +18,9 @@ export interface Store {
   saveConstraints(c: Constraints): Promise<void>;
   getConstraints(tripId: string): Promise<Constraints[]>;
   saveOptions(options: TripOption[]): Promise<void>;
+  deleteOptions(tripId: string, round: number): Promise<void>;
+  /** Atomically start an early-look run unless one started after `staleBefore`. */
+  claimPreview(tripId: string, now: string, staleBefore: string): Promise<boolean>;
   getOptions(tripId: string): Promise<TripOption[]>;
   getVotes(tripId: string): Promise<Vote[]>;
   upsertVote(v: Vote): Promise<void>;
@@ -98,6 +101,15 @@ class MemoryStore implements Store {
   async saveOptions(options: TripOption[]) {
     this.db.options.push(...clone(options));
   }
+  async deleteOptions(tripId: string, round: number) {
+    this.db.options = this.db.options.filter((o) => !(o.tripId === tripId && o.round === round));
+  }
+  async claimPreview(tripId: string, now: string, staleBefore: string) {
+    const t = this.db.trips.get(tripId);
+    if (!t || (t.previewStartedAt && t.previewStartedAt > staleBefore)) return false;
+    t.previewStartedAt = now;
+    return true;
+  }
   async getOptions(tripId: string) {
     return clone(this.db.options.filter((o) => o.tripId === tripId).sort((a, b) => a.round - b.round || a.rank - b.rank));
   }
@@ -134,7 +146,8 @@ const tripToRow = (t: Partial<Trip>): Row => {
     id: "id", name: "name", windowStart: "window_start", windowEnd: "window_end", tripLength: "trip_length",
     deadline: "deadline", status: "status", round: "round", organiserKey: "organiser_key",
     generationStartedAt: "generation_started_at", generationError: "generation_error",
-    votingClosedRound: "voting_closed_round", createdAt: "created_at",
+    votingClosedRound: "voting_closed_round", previewStartedAt: "preview_started_at", previewKey: "preview_key",
+    createdAt: "created_at",
   };
   const row: Row = {};
   for (const [k, v] of Object.entries(t)) row[map[k as keyof Trip]] = v;
@@ -145,7 +158,8 @@ const rowToTrip = (r: Row): Trip => ({
   id: r.id, name: r.name, windowStart: r.window_start, windowEnd: r.window_end, tripLength: r.trip_length,
   deadline: r.deadline, status: r.status, round: r.round, organiserKey: r.organiser_key,
   generationStartedAt: r.generation_started_at, generationError: r.generation_error,
-  votingClosedRound: r.voting_closed_round, createdAt: r.created_at,
+  votingClosedRound: r.voting_closed_round, previewStartedAt: r.preview_started_at ?? null,
+  previewKey: r.preview_key ?? null, createdAt: r.created_at,
 });
 
 const memberToRow = (m: Partial<Member>): Row => {
@@ -260,6 +274,20 @@ class SupabaseStore implements Store {
         }))
       )
     );
+  }
+  async deleteOptions(tripId: string, round: number) {
+    this.check(await this.sb.from("trip_options").delete().eq("trip_id", tripId).eq("round", round));
+  }
+  async claimPreview(tripId: string, now: string, staleBefore: string) {
+    const data = this.check(
+      await this.sb
+        .from("trips")
+        .update({ preview_started_at: now })
+        .eq("id", tripId)
+        .or(`preview_started_at.is.null,preview_started_at.lt.${staleBefore}`)
+        .select("id")
+    );
+    return (data?.length ?? 0) > 0;
   }
   async getOptions(tripId: string) {
     const data = this.check(

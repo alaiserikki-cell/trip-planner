@@ -40,6 +40,9 @@ export interface Trip {
   generationStartedAt: string | null;
   generationError: string | null;
   votingClosedRound: number;
+  /** Early look: options planned from whoever has answered so far, replanned as more answer. */
+  previewStartedAt: string | null;
+  previewKey: string | null; // which answers the current early look was planned from
   createdAt: string;
 }
 
@@ -234,6 +237,8 @@ export interface TripView {
   isOrganiser: boolean;
   deadlinePassed: boolean;
   generationStale: boolean;
+  /** The early look is being replanned to include newer answers. */
+  previewUpdating: boolean;
   rounds: RoundView[];
   cleanOptionIds: string[]; // current round options nobody is out on (after close)
   blocker: Blocker | null; // stalemate after the final round

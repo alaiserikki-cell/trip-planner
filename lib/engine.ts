@@ -11,7 +11,7 @@ import {
 } from "./constraints";
 import { planOptions, writeSummaries, type Person } from "./planner";
 import { getStore } from "./store";
-import type { Member, RoundView, Trip, TripOption, TripStatus, TripView, Vote } from "./types";
+import type { Constraints, Member, Preferences, RoundView, Trip, TripOption, TripStatus, TripView, Vote } from "./types";
 import { coverPhoto } from "./unsplash";
 
 export const GENERATION_STALE_MS = 4 * 60_000;
@@ -44,7 +44,7 @@ export function memberByToken(members: Member[], token: string | null): Member |
   return members.find((m) => m.deviceToken && m.deviceToken === token) ?? null;
 }
 
-export const MIN_PEOPLE = 3;
+export const MIN_PEOPLE = 2;
 export const MAX_PEOPLE = 8;
 
 export function allSubmitted(members: Member[]): boolean {
@@ -62,9 +62,80 @@ export function readyToGenerate(members: Member[]): boolean {
 
 // ---------- Generation ----------
 
+export const PREVIEW_STALE_MS = 3 * 60_000;
+
+/** Identifies exactly which answers a plan was built from. Changes when anyone submits or edits. */
+export function previewKey(members: Member[], prefs: Preferences[]): string {
+  return members
+    .filter((m) => m.submittedAt)
+    .map((m) => `${m.id}:${prefs.find((p) => p.memberId === m.id)?.updatedAt ?? ""}`)
+    .sort()
+    .join("|");
+}
+
+/** Constraints (code) → options (Gemini) → photos → fit scores and ranking. */
+async function planRound(
+  data: Loaded,
+  round: number,
+  { aiSummaries = true }: { aiSummaries?: boolean } = {}
+): Promise<{ constraints: Constraints; options: TripOption[] }> {
+  const { trip, members, prefs, options: existing, votes } = data;
+  const constraints = computeConstraints(trip, members, prefs, round);
+  if (!constraints.participantIds.length) throw new Error("Nobody has submitted preferences yet.");
+  if (!constraints.windows.length) throw new Error("The travel window is shorter than the trip length.");
+
+  const people: Person[] = constraints.participantIds.map((id) => ({
+    member: members.find((m) => m.id === id)!,
+    prefs: prefs.find((p) => p.memberId === id)!,
+  }));
+  const drafts = await planOptions({
+    trip,
+    constraints,
+    people,
+    missing: members.filter((m) => constraints.missingIds.includes(m.id)),
+    previous:
+      round > 1
+        ? { options: existing.filter((o) => o.round === round - 1), votes: votes.filter((v) => v.round === round - 1) }
+        : null,
+  });
+
+  const photos = await Promise.all(drafts.map((d) => coverPhoto(d.photoQuery)));
+  const base = drafts.map(({ photoQuery: _q, ...d }, i) => {
+    void _q;
+    return { ...d, id: randomUUID(), tripId: trip.id, round, photo: photos[i] };
+  });
+  const ranked = applyFits(base, members, people.map((p) => p.prefs));
+  // Each AI call counts against the Gemini quota; early looks keep the template sentences.
+  const options = aiSummaries ? await writeSummaries(ranked, people) : ranked;
+  return { constraints, options };
+}
+
 /**
- * Compute constraints (code), ask the planner for options (Gemini), attach photos
- * and fit scores, then open voting. `expected` guards against double starts.
+ * Turn the early look into round 1 without replanning. Fit is recomputed against
+ * the current member list.
+ */
+async function promotePreview(data: Loaded, preview: TripOption[]): Promise<{ constraints: Constraints; options: TripOption[] }> {
+  const { trip, members, prefs } = data;
+  const constraints = computeConstraints(trip, members, prefs, 1);
+  const participantPrefs = prefs.filter((p) => constraints.participantIds.includes(p.memberId));
+  const base = preview.map(({ fits: _f, minFit: _min, avgFit: _avg, rank: _r, ...o }) => {
+    void _f;
+    void _min;
+    void _avg;
+    void _r;
+    return { ...o, id: randomUUID(), round: 1 };
+  });
+  // One Gemini call for the final, AI-written fit sentences (no replanning).
+  const people: Person[] = constraints.participantIds.map((id) => ({
+    member: members.find((m) => m.id === id)!,
+    prefs: prefs.find((p) => p.memberId === id)!,
+  }));
+  const options = await writeSummaries(applyFits(base, members, participantPrefs), people);
+  return { constraints, options };
+}
+
+/**
+ * Final options for a round, then open voting. `expected` guards against double starts.
  */
 export async function runGeneration(tripId: string, round: number, expected: TripStatus[]): Promise<void> {
   const store = getStore();
@@ -79,46 +150,70 @@ export async function runGeneration(tripId: string, round: number, expected: Tri
   try {
     const data = await loadTrip(tripId);
     if (!data) return;
-    const { trip, members, prefs, options: existing, votes } = data;
+    const { trip, members, prefs, options: existing } = data;
     if (existing.some((o) => o.round === round)) {
       await store.updateTrip(tripId, { status: "voting" });
       return;
     }
 
-    const constraints = computeConstraints(trip, members, prefs, round);
-    if (!constraints.participantIds.length) throw new Error("Nobody has submitted preferences yet.");
-    if (!constraints.windows.length) throw new Error("The travel window is shorter than the trip length.");
+    const preview = existing.filter((o) => o.round === 0);
+    const upToDate = round === 1 && preview.length > 0 && trip.previewKey === previewKey(members, prefs);
+    const { constraints, options } = upToDate ? await promotePreview(data, preview) : await planRound(data, round);
+
     await store.saveConstraints(constraints);
-
-    const people: Person[] = constraints.participantIds.map((id) => ({
-      member: members.find((m) => m.id === id)!,
-      prefs: prefs.find((p) => p.memberId === id)!,
-    }));
-    const prevOptions = existing.filter((o) => o.round === round - 1);
-    const drafts = await planOptions({
-      trip,
-      constraints,
-      people,
-      missing: members.filter((m) => constraints.missingIds.includes(m.id)),
-      previous: round > 1 ? { options: prevOptions, votes: votes.filter((v) => v.round === round - 1) } : null,
-    });
-
-    const photos = await Promise.all(drafts.map((d) => coverPhoto(d.photoQuery)));
-    const base = drafts.map(({ photoQuery: _q, ...d }, i) => {
-      void _q;
-      return { ...d, id: randomUUID(), tripId, round, photo: photos[i] };
-    });
-    const participantPrefs = people.map((p) => p.prefs);
-    const ranked = await writeSummaries(applyFits(base, members, participantPrefs), people);
-
-    await store.saveOptions(ranked);
-    await store.updateTrip(tripId, { status: "voting", generationError: null });
+    await store.saveOptions(options);
+    if (round === 1) await store.deleteOptions(tripId, 0);
+    await store.updateTrip(tripId, { status: "voting", generationError: null, previewStartedAt: null });
   } catch (e) {
     console.error("[generation] failed:", e);
     await store.updateTrip(tripId, {
       generationError: e instanceof Error ? e.message : "Something went wrong while generating options.",
     });
   }
+}
+
+/**
+ * Early look: plan options from whoever has answered so far (2 or more), and
+ * replan whenever someone new answers or edits. Only one run at a time; a run
+ * re-checks at the end and goes again if answers changed while it was working.
+ */
+export async function runPreview(tripId: string): Promise<void> {
+  const store = getStore();
+  for (let pass = 0; pass < 3; pass++) {
+    const data = await loadTrip(tripId);
+    if (!data || data.trip.status !== "collecting") return;
+    const { members, prefs, trip } = data;
+    if (members.filter((m) => m.submittedAt).length < MIN_PEOPLE) return;
+    const key = previewKey(members, prefs);
+    if (trip.previewKey === key) return;
+
+    const now = new Date();
+    const claimed = await store.claimPreview(tripId, now.toISOString(), new Date(now.getTime() - PREVIEW_STALE_MS).toISOString());
+    if (!claimed) return; // another run is on it and will pick up these answers when it finishes
+
+    try {
+      const { constraints, options } = await planRound(data, 0, { aiSummaries: false });
+      const fresh = await store.getTrip(tripId);
+      if (!fresh || fresh.status !== "collecting") return; // final options took over meanwhile
+      await store.deleteOptions(tripId, 0);
+      await store.saveConstraints(constraints);
+      await store.saveOptions(options);
+      await store.updateTrip(tripId, { previewKey: key, previewStartedAt: null });
+    } catch (e) {
+      console.error("[preview] failed:", e);
+      await store.updateTrip(tripId, { previewStartedAt: null });
+      return;
+    }
+  }
+}
+
+export function needsPreview(data: Loaded): boolean {
+  const { trip, members, prefs } = data;
+  return (
+    trip.status === "collecting" &&
+    members.filter((m) => m.submittedAt).length >= MIN_PEOPLE &&
+    trip.previewKey !== previewKey(members, prefs)
+  );
 }
 
 export function isGenerationStale(trip: Trip, now = Date.now()): boolean {
@@ -185,6 +280,7 @@ export function buildView(data: Loaded, viewerToken: string | null, organiserKey
 
   const rounds: RoundView[] = [];
   for (const c of constraints) {
+    if (c.round === 0 && trip.status !== "collecting") continue;
     const opts = roundOptions(options, c.round);
     if (!opts.length) continue;
     const roundVotes = votes.filter((v) => v.round === c.round);
@@ -238,6 +334,7 @@ export function buildView(data: Loaded, viewerToken: string | null, organiserKey
     isOrganiser,
     deadlinePassed: trip.status === "collecting" && now > new Date(trip.deadline) && !readyToGenerate(members),
     generationStale: isGenerationStale(trip, now.getTime()),
+    previewUpdating: needsPreview(data),
     rounds,
     cleanOptionIds: clean.map((o) => o.id),
     blocker,
