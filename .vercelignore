@@ -1,0 +1,8 @@
+# Never upload local secrets or tooling. Env vars are set in Vercel instead.
+.env
+.env.*
+!.env.example
+.claude
+.next
+node_modules
+dev.cmd
