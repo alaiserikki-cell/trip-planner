@@ -93,3 +93,20 @@ export async function copyText(text: string): Promise<boolean> {
     return false;
   }
 }
+
+/** Every trip this browser has joined or created, with the tokens that prove it. */
+export function storedTrips(): { id: string; token: string | null; organiserKey: string | null }[] {
+  const ids = new Set<string>();
+  try {
+    for (let i = 0; i < window.localStorage.length; i++) {
+      const m = window.localStorage.key(i)?.match(/^trip:([0-9a-f-]{36}):(member|organiser)$/i);
+      if (m) ids.add(m[1]);
+    }
+  } catch {
+    return [];
+  }
+  return Array.from(ids).map((id) => {
+    const identity = getIdentity(id);
+    return { id, token: identity.token, organiserKey: identity.organiserKey };
+  });
+}

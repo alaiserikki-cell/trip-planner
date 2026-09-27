@@ -245,3 +245,19 @@ export interface TripView {
   lock: TripLock | null;
   now: string;
 }
+
+/** A trip as listed on "My trips". */
+export interface MyTrip {
+  id: string;
+  name: string;
+  status: TripStatus;
+  createdAt: string;
+  deadline: string;
+  windowStart: string;
+  windowEnd: string;
+  myName: string | null;
+  isOrganiser: boolean;
+  people: number;
+  answered: number;
+  locked: { destination: string; startDate: string; endDate: string } | null;
+}

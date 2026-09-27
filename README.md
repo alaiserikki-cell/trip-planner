@@ -38,6 +38,10 @@ Keys are read from the environment only, and only on the server. RLS is on for e
 6. **Round 2 / stalemate.** If every option has an "out", Gemini reads the votes and reasons and writes 3 new options, never repeating a round 1 destination. If round 2 also fails, the app shows the best-supported option and exactly what blocks it, and for whom.
 7. **Lock.** Only the organiser can lock. Locking an option someone voted out on needs a confirmation that names who's left out. The result is a shareable trip card (image) plus a dated checklist of next steps. Nothing gets booked.
 
+## My trips
+
+`/trips` lists every trip started or joined on that phone or browser: in progress first, then past (locked) trips with their destination and dates. There are no accounts, so the browser sends the device tokens it already holds and the server only returns trips those tokens prove it belongs to.
+
 ## Privacy rules enforced in the API (`lib/engine.ts → buildView`)
 
 - Nobody else's preferences are ever sent to a browser.
@@ -48,8 +52,9 @@ Keys are read from the environment only, and only on the server. RLS is on for e
 ## Layout
 
 ```
-app/api/trips/…      route handlers (create, view, join, preferences, deadline, generate, vote, close-voting, lock, reset-claim, remove-member)
+app/api/trips/…      route handlers (create, mine, view, join, preferences, deadline, generate, vote, close-voting, lock, reset-claim, remove-member)
 app/t/[id]/page.tsx  the single trip page; what it shows depends on status and role
+app/trips/page.tsx   My trips: past and current trips on this device
 lib/constraints.ts   deterministic step 1, fit scoring, ranking, blockers, checklist
 lib/planner.ts       Gemini planner + offline fallback
 lib/engine.ts        generation runs, voting rounds, per-viewer views

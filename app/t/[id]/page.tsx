@@ -265,11 +265,12 @@ function TripHeader({ view, onSwitch }: { view: TripView; onSwitch?: () => void 
         <Link href="/" aria-label="Plan it home">
           <Wordmark className="text-xl" />
         </Link>
-        {onSwitch && (
-          <button onClick={onSwitch} className="text-xs text-muted">
-            Not {view.me?.name}?
-          </button>
-        )}
+        <div className="flex items-center gap-4 text-xs text-muted">
+          {onSwitch && <button onClick={onSwitch}>Not {view.me?.name}?</button>}
+          <Link href="/trips" className="font-semibold text-brand">
+            My trips
+          </Link>
+        </div>
       </div>
       <h1 className="font-display mt-4 text-4xl font-bold leading-tight">{trip.name}</h1>
       <div className="mt-2 flex items-center justify-between gap-3">

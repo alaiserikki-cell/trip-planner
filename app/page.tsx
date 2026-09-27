@@ -26,9 +26,14 @@ export default async function Home() {
 
         <header className="mx-auto flex w-full max-w-6xl items-center justify-between px-5 py-5">
           <Wordmark light className="text-2xl" />
-          <a href="#start" className="rounded-full border border-white/40 px-4 py-2 text-sm font-medium backdrop-blur-sm transition hover:bg-white/10">
-            Start a trip
-          </a>
+          <nav className="flex items-center gap-2">
+            <a href="/trips" className="rounded-full px-4 py-2 text-sm font-medium text-white/90 transition hover:bg-white/10">
+              My trips
+            </a>
+            <a href="#start" className="rounded-full border border-white/40 px-4 py-2 text-sm font-medium backdrop-blur-sm transition hover:bg-white/10">
+              Start a trip
+            </a>
+          </nav>
         </header>
 
         <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col items-center justify-center px-5 pb-16 text-center">
