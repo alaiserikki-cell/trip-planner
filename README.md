@@ -10,6 +10,8 @@ cp .env.example .env.local   # add keys (optional for a first try)
 npm run dev
 ```
 
+If Gemini is unavailable (for example the free-tier quota runs out), the planner falls back to the database: every destination Gemini has planned before is saved with its coordinates, trip types, day plan and cost bands, and is scored against the group alongside a small built-in catalogue. The fallback gets better with every trip.
+
 With no keys, the app still runs end to end. It uses an offline planner, gradient covers and an in-memory store that resets when the server restarts.
 
 ### Connecting the services
@@ -18,7 +20,7 @@ With no keys, the app still runs end to end. It uses an offline planner, gradien
 |---|---|---|
 | Gemini | `GEMINI_API_KEY`, optional `GEMINI_MODEL` | Generates the 3 options, writes each person's fit sentence, and generates round 2 from the votes |
 | Unsplash | `UNSPLASH_ACCESS_KEY` | Cover photo per destination, credited on the card |
-| Supabase | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | Stores everything. Run `supabase/schema.sql` first |
+| Supabase | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | Stores everything, including a library of every destination Gemini has planned. Run `supabase/schema.sql` first |
 
 Keys are read from the environment only, and only on the server. RLS is on for every table with no policies, so the public anon key can't read anything.
 

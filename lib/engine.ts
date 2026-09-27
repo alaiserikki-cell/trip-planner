@@ -9,7 +9,8 @@ import {
   optionsWithoutOuts,
   unmetConstraints,
 } from "./constraints";
-import { planOptions, writeSummaries, type Person } from "./planner";
+import { planOptions, toLibraryEntry, writeSummaries, type DraftOption, type Person } from "./planner";
+import type { LibraryDestination } from "./places";
 import { getStore } from "./store";
 import type { Constraints, Member, Preferences, RoundView, Trip, TripOption, TripStatus, TripView, Vote } from "./types";
 import { coverPhoto } from "./unsplash";
@@ -89,26 +90,44 @@ async function planRound(
     member: members.find((m) => m.id === id)!,
     prefs: prefs.find((p) => p.memberId === id)!,
   }));
-  const drafts = await planOptions({
-    trip,
-    constraints,
-    people,
-    missing: members.filter((m) => constraints.missingIds.includes(m.id)),
-    previous:
-      round > 1
-        ? { options: existing.filter((o) => o.round === round - 1), votes: votes.filter((v) => v.round === round - 1) }
-        : null,
-  });
+  const store = getStore();
+  const library = await store.getLibrary().catch(() => [] as LibraryDestination[]);
+  const { drafts, source } = await planOptions(
+    {
+      trip,
+      constraints,
+      people,
+      missing: members.filter((m) => constraints.missingIds.includes(m.id)),
+      previous:
+        round > 1
+          ? { options: existing.filter((o) => o.round === round - 1), votes: votes.filter((v) => v.round === round - 1) }
+          : null,
+    },
+    library
+  );
+  // Remember what Gemini planned, so the fallback has more places when the quota runs out.
+  if (source === "ai") await rememberDestinations(drafts, library);
 
   const photos = await Promise.all(drafts.map((d) => coverPhoto(d.photoQuery)));
-  const base = drafts.map(({ photoQuery: _q, ...d }, i) => {
+  const base = drafts.map(({ photoQuery: _q, lat: _lat, lng: _lng, ...d }, i) => {
     void _q;
+    void _lat;
+    void _lng;
     return { ...d, id: randomUUID(), tripId: trip.id, round, photo: photos[i] };
   });
   const ranked = applyFits(base, members, people.map((p) => p.prefs));
   // Each AI call counts against the Gemini quota; early looks keep the template sentences.
   const options = aiSummaries ? await writeSummaries(ranked, people) : ranked;
   return { constraints, options };
+}
+
+async function rememberDestinations(drafts: DraftOption[], library: LibraryDestination[]): Promise<void> {
+  const entries = drafts
+    .map((d) => toLibraryEntry(d, library.find((l) => l.key === d.destination.trim().toLowerCase())))
+    .filter((e): e is LibraryDestination => !!e);
+  await getStore()
+    .saveLibrary(entries)
+    .catch((e) => console.error("[library] couldn't save destinations:", e));
 }
 
 /**

@@ -1,4 +1,5 @@
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
+import type { LibraryDestination } from "./places";
 import type { Constraints, Exclusion, Member, Preferences, Trip, TripLock, TripOption, TripStatus, Vote, VoteChange } from "./types";
 
 export interface Store {
@@ -27,6 +28,8 @@ export interface Store {
   addVoteChange(c: VoteChange): Promise<void>;
   getVoteChanges(tripId: string): Promise<VoteChange[]>;
   saveLock(l: TripLock): Promise<void>;
+  getLibrary(): Promise<LibraryDestination[]>;
+  saveLibrary(entries: LibraryDestination[]): Promise<void>;
   getLock(tripId: string): Promise<TripLock | null>;
 }
 
@@ -41,6 +44,7 @@ interface MemDb {
   votes: Vote[];
   changes: VoteChange[];
   locks: TripLock[];
+  library?: LibraryDestination[];
 }
 
 const clone = <T>(x: T): T => structuredClone(x);
@@ -133,6 +137,13 @@ class MemoryStore implements Store {
   async getLock(tripId: string) {
     const l = this.db.locks.find((x) => x.tripId === tripId);
     return l ? clone(l) : null;
+  }
+  async getLibrary() {
+    return clone(this.db.library ?? []);
+  }
+  async saveLibrary(entries: LibraryDestination[]) {
+    const keep = (this.db.library ?? []).filter((x) => !entries.some((e) => e.key === x.key));
+    this.db.library = [...keep, ...clone(entries)];
   }
 }
 
@@ -340,6 +351,31 @@ class SupabaseStore implements Store {
         trip_id: l.tripId, option_id: l.optionId, in_member_ids: l.inMemberIds, left_out_ids: l.leftOutIds,
         checklist: l.checklist, locked_at: l.lockedAt,
       })
+    );
+  }
+  async getLibrary() {
+    const data = this.check(await this.sb.from("trip_destination_library").select("*").order("uses", { ascending: false }).limit(300));
+    return (data ?? []).map(
+      (r: Row): LibraryDestination => ({
+        key: r.key, name: r.name, region: r.region, lat: r.lat, lng: r.lng, types: r.trip_types ?? [],
+        // Unknown for remembered places: assume a short hop from the nearest airport and railhead.
+        airportHours: 1.5, trainHours: 1,
+        stayPerNight: [r.stay_low, r.stay_high], spendPerDay: [r.spend_low, r.spend_high],
+        goodMonths: r.months ?? [], involvesTrek: r.involves_trek, highlights: r.highlights ?? [], uses: r.uses,
+      })
+    );
+  }
+  async saveLibrary(entries: LibraryDestination[]) {
+    if (!entries.length) return;
+    this.check(
+      await this.sb.from("trip_destination_library").upsert(
+        entries.map((e) => ({
+          key: e.key, name: e.name, region: e.region, lat: e.lat, lng: e.lng, trip_types: e.types,
+          stay_low: e.stayPerNight[0], stay_high: e.stayPerNight[1], spend_low: e.spendPerDay[0], spend_high: e.spendPerDay[1],
+          highlights: e.highlights, months: e.goodMonths, involves_trek: !!e.involvesTrek, uses: e.uses,
+          updated_at: new Date().toISOString(),
+        }))
+      )
     );
   }
   async getLock(tripId: string) {

@@ -5,7 +5,7 @@
 import { GoogleGenAI } from "@google/genai";
 import { z } from "zod";
 import { monthOf, prettyRange } from "./dates";
-import { DESTINATIONS, Destination, findCity } from "./places";
+import { DESTINATIONS, Destination, LibraryDestination, findCity } from "./places";
 import {
   TRAVEL_MODES,
   TRIP_LENGTH_LABEL,
@@ -75,6 +75,8 @@ export interface Person {
 
 export type DraftOption = Omit<TripOption, "id" | "tripId" | "round" | "rank" | "photo" | "fits" | "minFit" | "avgFit"> & {
   photoQuery: string;
+  lat?: number; // from Gemini, so the place can be remembered and reused offline
+  lng?: number;
 };
 
 export interface PreviousRound {
@@ -97,6 +99,8 @@ const PlanSchema = z.object({
     z.object({
       destination: z.string().describe("Place name, e.g. 'Gokarna'"),
       region: z.string().describe("State or country, e.g. 'Karnataka'"),
+      lat: z.number().describe("Approximate latitude of the destination"),
+      lng: z.number().describe("Approximate longitude of the destination"),
       photoQuery: z.string().describe("A short Unsplash search query for a scenic cover photo of this destination"),
       tripTypes: z.array(z.enum(TRIP_TYPES)).describe("Which of the trip types this option delivers, most relevant first"),
       windowIndex: z.number().int().describe("Index of the candidate date window this option uses"),
@@ -200,7 +204,7 @@ async function planWithAI(input: PlanInput): Promise<DraftOption[]> {
     const w = constraints.windows[o.windowIndex] ?? constraints.windows[0];
     const travel: TravelLeg[] = people.map(({ member, prefs }) => {
       const t = o.travel.find((x) => x.person.trim().toLowerCase() === member.name.toLowerCase());
-      if (!t) return estimateLeg(member.id, prefs, findDest(o.destination));
+      if (!t) return estimateLeg(member.id, prefs, { ...findDest(o.destination), name: o.destination, lat: o.lat, lng: o.lng });
       return {
         memberId: member.id,
         fromCity: prefs.startingCity,
@@ -213,6 +217,8 @@ async function planWithAI(input: PlanInput): Promise<DraftOption[]> {
     drafts.push({
       destination: o.destination,
       region: o.region,
+      lat: o.lat,
+      lng: o.lng,
       photoQuery: o.photoQuery || `${o.destination} ${o.region}`,
       tripTypes: o.tripTypes.length ? o.tripTypes : ["Just relax"],
       startDate: w.start,
@@ -351,7 +357,7 @@ function offlineDays(dest: Destination, n: number, noTreks: boolean): string[] {
   return [...h.slice(0, n - 1), h[h.length - 1]];
 }
 
-function planOffline(input: PlanInput): DraftOption[] {
+function planOffline(input: PlanInput, library: LibraryDestination[] = []): DraftOption[] {
   const { constraints, people, previous } = input;
   const used = new Set((previous?.options ?? []).map((o) => o.destination.toLowerCase()));
   const excl = constraints.exclusions.map((x) => x.text).join(" | ").toLowerCase();
@@ -359,7 +365,12 @@ function planOffline(input: PlanInput): DraftOption[] {
   const windows = constraints.windows.length ? constraints.windows : [];
   if (!windows.length) throw new Error("No date windows to plan around");
 
-  const scored = DESTINATIONS.filter((d) => !used.has(d.name.toLowerCase()) && !excl.includes(d.name.toLowerCase())).map((d) => {
+  // Built-in catalogue plus every place Gemini has planned before (remembered in the database).
+  const pool: Destination[] = [
+    ...DESTINATIONS,
+    ...library.filter((l) => !DESTINATIONS.some((d) => d.name.toLowerCase() === l.name.toLowerCase())),
+  ];
+  const scored = pool.filter((d) => !used.has(d.name.toLowerCase()) && !excl.includes(d.name.toLowerCase())).map((d) => {
     const window = windows.slice(0, 3).find((w) => d.goodMonths.includes(monthOf(w.start))) ?? windows[0];
     const nights = Math.max(1, window.days - 1);
     const stay: Range = { low: round500(d.stayPerNight[0] * nights), high: round500(d.stayPerNight[1] * nights) };
@@ -410,15 +421,43 @@ function planOffline(input: PlanInput): DraftOption[] {
 
 // ---------- Public API ----------
 
-export async function planOptions(input: PlanInput): Promise<DraftOption[]> {
+export async function planOptions(
+  input: PlanInput,
+  library: LibraryDestination[] = []
+): Promise<{ drafts: DraftOption[]; source: "ai" | "offline" }> {
   if (isAIConfigured()) {
     try {
-      return await planWithAI(input);
+      return { drafts: await planWithAI(input), source: "ai" };
     } catch (e) {
-      console.error("[planner] Gemini planning failed, using offline planner:", e);
+      console.error("[planner] Gemini planning failed, using the saved destination library:", e);
     }
   }
-  return planOffline(input);
+  return { drafts: planOffline(input, library), source: "offline" };
+}
+
+/** Turn a Gemini-planned option into a reusable library entry (per-night / per-day bands). */
+export function toLibraryEntry(d: DraftOption, existing?: LibraryDestination): LibraryDestination | null {
+  if (typeof d.lat !== "number" || typeof d.lng !== "number" || !d.days.length) return null;
+  const days = d.days.length;
+  const nights = Math.max(1, days - 1);
+  const m = monthOf(d.startDate);
+  const months = new Set([...(existing?.goodMonths ?? []), ((m + 10) % 12) + 1, m, (m % 12) + 1]);
+  return {
+    key: d.destination.trim().toLowerCase(),
+    name: d.destination,
+    region: d.region,
+    lat: d.lat,
+    lng: d.lng,
+    types: d.tripTypes,
+    airportHours: 1.5,
+    trainHours: 1,
+    stayPerNight: [Math.round(d.stay.low / nights), Math.round(d.stay.high / nights)],
+    spendPerDay: [Math.round(d.dailySpend.low / days), Math.round(d.dailySpend.high / days)],
+    goodMonths: Array.from(months).sort((a, b) => a - b),
+    involvesTrek: /trek|hike/i.test(d.days.join(" ")),
+    highlights: d.days,
+    uses: (existing?.uses ?? 0) + 1,
+  };
 }
 
 /** Replace the template fit sentences with Gemini-written ones where available. */

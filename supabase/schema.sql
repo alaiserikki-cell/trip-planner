@@ -127,3 +127,24 @@ alter table trip_options enable row level security;
 alter table trip_votes enable row level security;
 alter table trip_vote_changes enable row level security;
 alter table trip_locks enable row level security;
+
+-- Every destination Gemini has planned, remembered so the planner can fall back
+-- to real, previously planned places when the Gemini quota runs out.
+create table if not exists trip_destination_library (
+  key text primary key,                            -- lower-cased destination name
+  name text not null,
+  region text not null default '',
+  lat double precision not null,
+  lng double precision not null,
+  trip_types text[] not null default '{}',
+  stay_low int not null,                           -- per person per night
+  stay_high int not null,
+  spend_low int not null,                          -- per person per day
+  spend_high int not null,
+  highlights jsonb not null default '[]'::jsonb,   -- day-by-day lines from the plan
+  months int[] not null default '{}',              -- months it was recommended for (± 1)
+  involves_trek boolean not null default false,
+  uses int not null default 1,
+  updated_at timestamptz not null default now()
+);
+alter table trip_destination_library enable row level security;

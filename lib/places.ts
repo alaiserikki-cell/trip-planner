@@ -60,6 +60,12 @@ export function findCity(name: string) {
   );
 }
 
+/** A destination Gemini planned before, remembered in the database for when Gemini is unavailable. */
+export interface LibraryDestination extends Destination {
+  key: string;
+  uses: number;
+}
+
 export interface Destination {
   name: string;
   region: string;
