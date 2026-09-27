@@ -44,7 +44,8 @@ export function memberByToken(members: Member[], token: string | null): Member |
   return members.find((m) => m.deviceToken && m.deviceToken === token) ?? null;
 }
 
-export const MIN_PEOPLE = 2;
+export const MIN_PEOPLE = 2; // for final options and voting
+export const MIN_PREVIEW = 1; // trip ideas start from the very first answer
 export const MAX_PEOPLE = 8;
 
 export function allSubmitted(members: Member[]): boolean {
@@ -173,7 +174,7 @@ export async function runGeneration(tripId: string, round: number, expected: Tri
 }
 
 /**
- * Early look: plan options from whoever has answered so far (2 or more), and
+ * Early look: plan options from whoever has answered so far (from the first answer), and
  * replan whenever someone new answers or edits. Only one run at a time; a run
  * re-checks at the end and goes again if answers changed while it was working.
  */
@@ -183,7 +184,7 @@ export async function runPreview(tripId: string): Promise<void> {
     const data = await loadTrip(tripId);
     if (!data || data.trip.status !== "collecting") return;
     const { members, prefs, trip } = data;
-    if (members.filter((m) => m.submittedAt).length < MIN_PEOPLE) return;
+    if (members.filter((m) => m.submittedAt).length < MIN_PREVIEW) return;
     const key = previewKey(members, prefs);
     if (trip.previewKey === key) return;
 
@@ -211,7 +212,7 @@ export function needsPreview(data: Loaded): boolean {
   const { trip, members, prefs } = data;
   return (
     trip.status === "collecting" &&
-    members.filter((m) => m.submittedAt).length >= MIN_PEOPLE &&
+    members.filter((m) => m.submittedAt).length >= MIN_PREVIEW &&
     trip.previewKey !== previewKey(members, prefs)
   );
 }

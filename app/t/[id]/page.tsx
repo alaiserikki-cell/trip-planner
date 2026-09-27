@@ -223,7 +223,7 @@ function Body({ view, identity, url, isNew, refresh }: { view: TripView; identit
               <p className="font-display text-xl font-bold">You&apos;re in</p>
               <p className="mt-1 text-sm text-muted">
                 {members.length - waitingOn.length < 2
-                  ? "Waiting for one more person to answer. The first trip options appear as soon as 2 people have. Friends can add themselves from the link."
+                  ? "Below are trip ideas based on your answers so far. They'll change as friends answer. Friends can add themselves from the link."
                   : waitingOn.length
                     ? `Waiting on ${waitingOn.length} more. Below is an early look based on everyone who's answered so far. Voting opens once everyone's in, or at the deadline.`
                     : "Everyone has answered. Final options are on their way."}
