@@ -1,6 +1,5 @@
 import { randomUUID } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { MAX_PEOPLE } from "@/lib/engine";
 import { auth, fail, type Ctx } from "@/lib/http";
 import { getStore } from "@/lib/store";
 
@@ -38,7 +37,6 @@ export async function POST(req: NextRequest, { params }: Ctx) {
   }
 
   if (trip.status !== "collecting") return fail("Options have already been generated, so this trip isn't taking new people.", 409);
-  if (members.length >= MAX_PEOPLE) return fail(`This trip is full (${MAX_PEOPLE} people). Ask the organiser.`, 409);
 
   const next = randomUUID();
   const member = {

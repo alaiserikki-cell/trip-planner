@@ -66,7 +66,7 @@ export default async function Home() {
       </section>
 
       <section id="how" className="mx-auto w-full max-w-6xl px-5 py-20">
-        <p className="text-center text-xs font-semibold uppercase tracking-[0.2em] text-brand">For 3–8 friends in different cities</p>
+        <p className="text-center text-xs font-semibold uppercase tracking-[0.2em] text-brand">For friends in different cities, however many of you there are</p>
         <h2 className="font-display mx-auto mt-3 max-w-2xl text-center text-4xl font-bold leading-tight sm:text-5xl">
           From <em className="text-gradient pr-1">“we should do a trip”</em> to booked in a week.
         </h2>

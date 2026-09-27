@@ -1,7 +1,6 @@
 import { randomUUID } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { daysBetween, todayISO } from "@/lib/dates";
-import { MAX_PEOPLE } from "@/lib/engine";
 import { fail } from "@/lib/http";
 import { getStore } from "@/lib/store";
 import { TRIP_LENGTHS, type Member, type Trip, type TripLength } from "@/lib/types";
@@ -23,8 +22,6 @@ export async function POST(req: NextRequest) {
   if (!name) return fail("Give the trip a name.");
   if (!organiserName) return fail("Add your own name.");
   const everyone = [organiserName, ...friends];
-  // Friends can also add themselves from the link, so only the upper limit applies here.
-  if (everyone.length > MAX_PEOPLE) return fail(`Up to ${MAX_PEOPLE} people, including you.`);
   if (new Set(everyone.map((n) => n.toLowerCase())).size !== everyone.length) return fail("Every name needs to be different.");
   if (!TRIP_LENGTHS.includes(tripLength)) return fail("Pick a trip length.");
   if (!DATE_RE.test(windowStart ?? "") || !DATE_RE.test(windowEnd ?? "")) return fail("Pick the travel window.");

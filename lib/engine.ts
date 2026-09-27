@@ -47,7 +47,6 @@ export function memberByToken(members: Member[], token: string | null): Member |
 
 export const MIN_PEOPLE = 2; // for final options and voting
 export const MIN_PREVIEW = 1; // trip ideas start from the very first answer
-export const MAX_PEOPLE = 8;
 
 export function allSubmitted(members: Member[]): boolean {
   return members.every((m) => m.submittedAt);
