@@ -158,21 +158,26 @@ function Body({ view, identity, url, isNew, refresh }: { view: TripView; identit
   }
 
   if (trip.status === "voting" || trip.status === "deciding") {
-    const canAddLate = trip.status === "voting" && !meView.submitted && !view.rounds.find((r) => r.round === trip.round)?.votes.closed;
-    if (canAddLate && editing) {
+    // Answers can be added or edited until voting closes; the options stay put and fit is recalculated.
+    const canEditNow = trip.status === "voting" && !view.rounds.find((r) => r.round === trip.round)?.votes.closed;
+    if (canEditNow && editing) {
       return (
         <div className="space-y-4">
           <div className="pt-2">
-            <h2 className="font-display text-2xl font-bold">Hi {me!.name} 👋</h2>
-            <p className="text-sm text-muted">The options are already out. Your answers show how each one fits you, and the vote waits for you.</p>
+            <h2 className="font-display text-2xl font-bold">{meView.submitted ? "Edit your answers" : `Hi ${me!.name} 👋`}</h2>
+            <p className="text-sm text-muted">
+              {meView.submitted
+                ? "The options stay the same. Saving updates how each one fits you, and the group fit and ranking."
+                : "The options are already out. Your answers show how each one fits you, and the vote waits for you."}
+            </p>
           </div>
-          <PreferenceForm trip={trip} initial={null} onSubmit={submit} onCancel={() => setEditing(false)} />
+          <PreferenceForm trip={trip} initial={me!.preferences} onSubmit={submit} onCancel={() => setEditing(false)} />
         </div>
       );
     }
     return (
       <div className="space-y-4">
-        {canAddLate ? (
+        {canEditNow && !meView.submitted && (
           <div className="card space-y-3 p-5">
             <p className="font-display text-lg font-bold">You joined after the options came out</p>
             <p className="text-sm text-muted">Add your answers so each option shows how it fits you, then vote. It takes about three minutes.</p>
@@ -180,8 +185,17 @@ function Body({ view, identity, url, isNew, refresh }: { view: TripView; identit
               Add my answers
             </button>
           </div>
-        ) : (
-          !meView.submitted && <Notice>You didn&apos;t send preferences this time, so you show as “No preferences submitted”. You can still vote.</Notice>
+        )}
+        {canEditNow && meView.submitted && (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-sunk px-4 py-3">
+            <p className="text-sm text-muted">Changed your mind about dates, budget or anything else?</p>
+            <button onClick={() => setEditing(true)} className="btn btn-ghost px-4 py-2 text-sm">
+              Edit my answers
+            </button>
+          </div>
+        )}
+        {!canEditNow && !meView.submitted && (
+          <Notice>You didn&apos;t send preferences this time, so you show as “No preferences submitted”. You can still vote.</Notice>
         )}
         <OptionsBoard view={view} identity={identity} url={url} refresh={refresh} />
       </div>

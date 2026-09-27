@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse, after } from "next/server";
 import { eachDate } from "@/lib/dates";
-import { addLateAnswer, memberByToken, runPreview } from "@/lib/engine";
+import { memberByToken, refitCurrentRound, runPreview } from "@/lib/engine";
 import { auth, fail, type Ctx } from "@/lib/http";
 import { getStore } from "@/lib/store";
 import {
@@ -26,13 +26,11 @@ export async function POST(req: NextRequest, { params }: Ctx) {
   const members = await store.getMembers(id);
   const me = memberByToken(members, auth(req).token);
   if (!me) return fail("Pick your name first.", 401);
-  // Before voting: answers can be edited freely. While voting is open: someone who
-  // joined late can still send their answers once. After that: closed.
-  const lateAnswer = trip.status === "voting" && trip.votingClosedRound < trip.round && !me.submittedAt;
+  // Answers can be added or edited until voting closes. During voting the options
+  // stay as they are and everyone's fit is recalculated.
+  const duringVoting = trip.status === "voting" && trip.votingClosedRound < trip.round;
   if (trip.status === "generating") return fail("The options are being planned right now. Try again in a minute.", 409);
-  if (trip.status !== "collecting" && !lateAnswer) {
-    return fail(me.submittedAt ? "Voting has started, so answers are locked in." : "Voting has closed for this trip.", 409);
-  }
+  if (trip.status !== "collecting" && !duringVoting) return fail("Voting has closed, so answers are locked in.", 409);
 
   const startingCity = String(body.startingCity ?? "").trim().slice(0, 60);
   if (!startingCity) return fail("Add your starting city.");
@@ -82,7 +80,7 @@ export async function POST(req: NextRequest, { params }: Ctx) {
     await store.updateMember(me.id, { submittedAt: prefs.updatedAt });
   }
 
-  if (lateAnswer) await addLateAnswer(id);
+  if (duringVoting) await refitCurrentRound(id, me.id);
   else after(() => runPreview(id)); // refresh the early look with this answer
   return NextResponse.json({ ok: true });
 }

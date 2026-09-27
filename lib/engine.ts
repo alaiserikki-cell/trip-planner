@@ -62,11 +62,12 @@ export function canStartVoting(members: Member[]): boolean {
 }
 
 /**
- * A friend who joined after the options were planned answers while voting is
- * open: add them to the voters and recompute everyone's fit for the current
- * options (code only, no replanning). Existing AI-written sentences are kept.
+ * Someone answered or edited while voting is open (a late joiner, or a change of
+ * mind): refresh the voter list and recompute everyone's fit for the current
+ * options (code only, no replanning). Others keep their AI-written sentences;
+ * the person who changed gets a sentence written from their new answers.
  */
-export async function addLateAnswer(tripId: string): Promise<void> {
+export async function refitCurrentRound(tripId: string, changedMemberId: string): Promise<void> {
   const data = await loadTrip(tripId);
   if (!data || data.trip.status !== "voting") return;
   const { trip, members, prefs, constraints, options } = data;
@@ -94,7 +95,7 @@ export async function addLateAnswer(tripId: string): Promise<void> {
     const before = current.find((x) => x.id === o.id);
     const fits = o.fits.map((f) => {
       const old = before?.fits.find((x) => x.memberId === f.memberId);
-      return old?.submitted && f.submitted ? { ...f, summary: old.summary } : f;
+      return old?.submitted && f.submitted && f.memberId !== changedMemberId ? { ...f, summary: old.summary } : f;
     });
     await store.updateOptionFits({ id: o.id, fits, minFit: o.minFit, avgFit: o.avgFit, rank: o.rank });
   }
