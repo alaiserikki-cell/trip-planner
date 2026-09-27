@@ -12,7 +12,7 @@ import {
 import { planOptions, toLibraryEntry, writeSummaries, type DraftOption, type Person } from "./planner";
 import type { LibraryDestination } from "./places";
 import { getStore } from "./store";
-import type { Constraints, Member, Preferences, RoundView, Trip, TripOption, TripStatus, TripView, Vote } from "./types";
+import type { Constraints, Fit, Member, Preferences, RoundView, Trip, TripOption, TripStatus, TripView, Vote } from "./types";
 import { coverPhoto } from "./unsplash";
 
 export const GENERATION_STALE_MS = 4 * 60_000;
@@ -337,6 +337,23 @@ export function buildView(data: Loaded, viewerToken: string | null, organiserKey
     ),
   });
 
+  // Everyone on the trip gets a row on every option, including people who joined
+  // after the options were planned and haven't answered yet.
+  const withEveryone = (o: TripOption): TripOption => ({
+    ...o,
+    fits: [
+      ...o.fits,
+      ...members
+        .filter((m) => !o.fits.some((f) => f.memberId === m.id))
+        .map(
+          (m): Fit => ({
+            memberId: m.id, submitted: false, dates: "amber", budget: "amber", budgetLabel: "Stretch",
+            tripType: "amber", travel: "amber", score: 0, summary: `${m.name}: No preferences submitted.`,
+          })
+        ),
+    ],
+  });
+
   const rounds: RoundView[] = [];
   for (const c of constraints) {
     if (c.round === 0 && trip.status !== "collecting") continue;
@@ -350,7 +367,7 @@ export function buildView(data: Loaded, viewerToken: string | null, organiserKey
     }
     rounds.push({
       round: c.round,
-      options: opts.map(hideFor),
+      options: opts.map((o) => hideFor(withEveryone(o))),
       stats: Object.fromEntries(opts.map((o) => [o.id, optionStats(o)])),
       exclusions: c.exclusions.map((x) => exclusionLine(x, (id) => members.find((m) => m.id === id)?.name ?? "Someone")),
       missingIds: c.missingIds,
