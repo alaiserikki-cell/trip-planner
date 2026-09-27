@@ -5,8 +5,8 @@ import OptionCard from "./OptionCard";
 import { Notice } from "./ui";
 import type { TripView } from "@/lib/types";
 
-// Options planned from whoever has answered so far. Read-only: voting opens
-// once everyone who joined has answered, so nobody votes on a moving target.
+// Options planned from whoever has answered so far. Read-only: voting starts
+// when the organiser opens it (or at the deadline), so nobody votes on a moving target.
 export default function EarlyLook({ view }: { view: TripView }) {
   const submitted = view.members.filter((m) => m.submitted).length;
   if (submitted < 1) return null;
@@ -31,8 +31,8 @@ export default function EarlyLook({ view }: { view: TripView }) {
         </h2>
         <p className="mt-1 text-sm text-muted">
           {round.votes.participantIds.length === 1 && round.votes.participantIds[0] === view.me?.memberId
-            ? "Based on your answers so far. These change as friends answer, and voting opens once everyone's in."
-            : `Based on ${round.votes.participantIds.length} of ${view.members.length} people so far. These change as more people answer, and voting opens once everyone's in.`}
+            ? "Based on your answers so far. These change as friends answer, until the vote starts."
+            : `Based on ${round.votes.participantIds.length} of ${view.members.length} people so far. These change as more people answer, until the vote starts.`}
         </p>
       </div>
       {view.previewUpdating && <Notice>Updating to include the latest answers…</Notice>}

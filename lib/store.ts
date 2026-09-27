@@ -20,6 +20,7 @@ export interface Store {
   getConstraints(tripId: string): Promise<Constraints[]>;
   saveOptions(options: TripOption[]): Promise<void>;
   deleteOptions(tripId: string, round: number): Promise<void>;
+  updateOptionFits(o: Pick<TripOption, "id" | "fits" | "minFit" | "avgFit" | "rank">): Promise<void>;
   /** Atomically start an early-look run unless one started after `staleBefore`. */
   claimPreview(tripId: string, now: string, staleBefore: string): Promise<boolean>;
   getOptions(tripId: string): Promise<TripOption[]>;
@@ -107,6 +108,10 @@ class MemoryStore implements Store {
   }
   async deleteOptions(tripId: string, round: number) {
     this.db.options = this.db.options.filter((o) => !(o.tripId === tripId && o.round === round));
+  }
+  async updateOptionFits(o: Pick<TripOption, "id" | "fits" | "minFit" | "avgFit" | "rank">) {
+    const x = this.db.options.find((y) => y.id === o.id);
+    if (x) Object.assign(x, clone(o));
   }
   async claimPreview(tripId: string, now: string, staleBefore: string) {
     const t = this.db.trips.get(tripId);
@@ -288,6 +293,14 @@ class SupabaseStore implements Store {
   }
   async deleteOptions(tripId: string, round: number) {
     this.check(await this.sb.from("trip_options").delete().eq("trip_id", tripId).eq("round", round));
+  }
+  async updateOptionFits(o: Pick<TripOption, "id" | "fits" | "minFit" | "avgFit" | "rank">) {
+    this.check(
+      await this.sb
+        .from("trip_options")
+        .update({ fits: o.fits, min_fit: o.minFit, avg_fit: o.avgFit, rank: o.rank })
+        .eq("id", o.id)
+    );
   }
   async claimPreview(tripId: string, now: string, staleBefore: string) {
     const data = this.check(

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse, after } from "next/server";
-import { advanceVoting, buildView, loadTrip, needsPreview, readyToGenerate, runGeneration, runPreview } from "@/lib/engine";
+import { advanceVoting, buildView, loadTrip, needsPreview, runGeneration, runPreview } from "@/lib/engine";
 import { auth, fail, type Ctx } from "@/lib/http";
 
 export const maxDuration = 300;
@@ -12,10 +12,8 @@ export async function GET(req: NextRequest, { params }: Ctx) {
 
   // Self-heal: if a transition was missed (e.g. a background task died), nudge it along.
   // Both calls are guarded by compare-and-set on the trip status, so repeats are harmless.
-  const { trip, members } = data;
-  if (trip.status === "collecting" && readyToGenerate(members)) {
-    after(() => runGeneration(id, 1, ["collecting"]));
-  } else if (needsPreview(data)) {
+  const { trip } = data;
+  if (needsPreview(data)) {
     after(() => runPreview(id));
   } else if (trip.status === "voting") {
     after(async () => {

@@ -36,7 +36,7 @@ export async function POST(req: NextRequest, { params }: Ctx) {
     );
   }
 
-  if (trip.status !== "collecting") return fail("Options have already been generated, so this trip isn't taking new people.", 409);
+  if (trip.status === "locked") return fail("This trip is already locked, so it isn't taking new people.", 409);
 
   const next = randomUUID();
   const member = {

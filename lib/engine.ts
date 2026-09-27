@@ -53,12 +53,51 @@ export function allSubmitted(members: Member[]): boolean {
 }
 
 /**
- * Friends can add themselves from the link, so "everyone has submitted" only
- * means something once enough people have joined. Below that, wait for the
- * deadline and let the organiser decide.
+ * With open joining, "everyone who joined has answered" can't start voting on its
+ * own: more friends may still be on their way. Voting starts when the organiser
+ * says so (2+ answers) or at the deadline.
  */
-export function readyToGenerate(members: Member[]): boolean {
-  return members.length >= MIN_PEOPLE && allSubmitted(members);
+export function canStartVoting(members: Member[]): boolean {
+  return members.filter((m) => m.submittedAt).length >= MIN_PEOPLE;
+}
+
+/**
+ * A friend who joined after the options were planned answers while voting is
+ * open: add them to the voters and recompute everyone's fit for the current
+ * options (code only, no replanning). Existing AI-written sentences are kept.
+ */
+export async function addLateAnswer(tripId: string): Promise<void> {
+  const data = await loadTrip(tripId);
+  if (!data || data.trip.status !== "voting") return;
+  const { trip, members, prefs, constraints, options } = data;
+  const store = getStore();
+  const current = roundOptions(options, trip.round);
+  const c = constraints.find((x) => x.round === trip.round);
+  if (!c || !current.length) return;
+
+  const participantIds = members.filter((m) => m.submittedAt && prefs.some((p) => p.memberId === m.id)).map((m) => m.id);
+  await store.saveConstraints({
+    ...c,
+    participantIds,
+    missingIds: members.filter((m) => !participantIds.includes(m.id)).map((m) => m.id),
+  });
+
+  const base = current.map(({ fits: _f, minFit: _min, avgFit: _avg, rank: _r, ...o }) => {
+    void _f;
+    void _min;
+    void _avg;
+    void _r;
+    return o;
+  });
+  const refit = applyFits(base, members, prefs.filter((p) => participantIds.includes(p.memberId)));
+  for (const o of refit) {
+    const before = current.find((x) => x.id === o.id);
+    const fits = o.fits.map((f) => {
+      const old = before?.fits.find((x) => x.memberId === f.memberId);
+      return old?.submitted && f.submitted ? { ...f, summary: old.summary } : f;
+    });
+    await store.updateOptionFits({ id: o.id, fits, minFit: o.minFit, avgFit: o.avgFit, rank: o.rank });
+  }
 }
 
 // ---------- Generation ----------
@@ -351,7 +390,7 @@ export function buildView(data: Loaded, viewerToken: string | null, organiserKey
     })),
     me: me ? { memberId: me.id, name: me.name, preferences: myPrefs } : null,
     isOrganiser,
-    deadlinePassed: trip.status === "collecting" && now > new Date(trip.deadline) && !readyToGenerate(members),
+    deadlinePassed: trip.status === "collecting" && now > new Date(trip.deadline),
     generationStale: isGenerationStale(trip, now.getTime()),
     previewUpdating: needsPreview(data),
     rounds,

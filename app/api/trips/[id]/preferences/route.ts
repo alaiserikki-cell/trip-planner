@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse, after } from "next/server";
 import { eachDate } from "@/lib/dates";
-import { memberByToken, readyToGenerate, runGeneration, runPreview } from "@/lib/engine";
+import { addLateAnswer, memberByToken, runPreview } from "@/lib/engine";
 import { auth, fail, type Ctx } from "@/lib/http";
 import { getStore } from "@/lib/store";
 import {
@@ -26,7 +26,13 @@ export async function POST(req: NextRequest, { params }: Ctx) {
   const members = await store.getMembers(id);
   const me = memberByToken(members, auth(req).token);
   if (!me) return fail("Pick your name first.", 401);
-  if (trip.status !== "collecting") return fail("Options have been generated, so preferences are frozen for this round.", 409);
+  // Before voting: answers can be edited freely. While voting is open: someone who
+  // joined late can still send their answers once. After that: closed.
+  const lateAnswer = trip.status === "voting" && trip.votingClosedRound < trip.round && !me.submittedAt;
+  if (trip.status === "generating") return fail("The options are being planned right now. Try again in a minute.", 409);
+  if (trip.status !== "collecting" && !lateAnswer) {
+    return fail(me.submittedAt ? "Voting has started, so answers are locked in." : "Voting has closed for this trip.", 409);
+  }
 
   const startingCity = String(body.startingCity ?? "").trim().slice(0, 60);
   if (!startingCity) return fail("Add your starting city.");
@@ -76,8 +82,7 @@ export async function POST(req: NextRequest, { params }: Ctx) {
     await store.updateMember(me.id, { submittedAt: prefs.updatedAt });
   }
 
-  // Everyone's in: final options. Otherwise refresh the early look (runs once 2+ have answered).
-  if (readyToGenerate(members)) after(() => runGeneration(id, 1, ["collecting"]));
-  else after(() => runPreview(id));
+  if (lateAnswer) await addLateAnswer(id);
+  else after(() => runPreview(id)); // refresh the early look with this answer
   return NextResponse.json({ ok: true });
 }

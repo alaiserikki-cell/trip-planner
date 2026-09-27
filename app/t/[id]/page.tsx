@@ -158,9 +158,31 @@ function Body({ view, identity, url, isNew, refresh }: { view: TripView; identit
   }
 
   if (trip.status === "voting" || trip.status === "deciding") {
+    const canAddLate = trip.status === "voting" && !meView.submitted && !view.rounds.find((r) => r.round === trip.round)?.votes.closed;
+    if (canAddLate && editing) {
+      return (
+        <div className="space-y-4">
+          <div className="pt-2">
+            <h2 className="font-display text-2xl font-bold">Hi {me!.name} 👋</h2>
+            <p className="text-sm text-muted">The options are already out. Your answers show how each one fits you, and the vote waits for you.</p>
+          </div>
+          <PreferenceForm trip={trip} initial={null} onSubmit={submit} onCancel={() => setEditing(false)} />
+        </div>
+      );
+    }
     return (
       <div className="space-y-4">
-        {!meView.submitted && <Notice>You didn&apos;t send preferences this time, so you show as “No preferences submitted”. You can still vote.</Notice>}
+        {canAddLate ? (
+          <div className="card space-y-3 p-5">
+            <p className="font-display text-lg font-bold">You joined after the options came out</p>
+            <p className="text-sm text-muted">Add your answers so each option shows how it fits you, then vote. It takes about three minutes.</p>
+            <button onClick={() => setEditing(true)} className="btn btn-primary px-5 py-3 text-sm">
+              Add my answers
+            </button>
+          </div>
+        ) : (
+          !meView.submitted && <Notice>You didn&apos;t send preferences this time, so you show as “No preferences submitted”. You can still vote.</Notice>
+        )}
         <OptionsBoard view={view} identity={identity} url={url} refresh={refresh} />
       </div>
     );
@@ -196,7 +218,7 @@ function Body({ view, identity, url, isNew, refresh }: { view: TripView; identit
                 Extend 24 hours
               </button>
               <button disabled={busy} onClick={() => act("deadline", { action: "proceed" })} className="btn btn-primary py-3 text-sm">
-                Go ahead
+                Start voting
               </button>
             </div>
             {actionError && <Notice tone="bad">{actionError}</Notice>}
@@ -225,8 +247,8 @@ function Body({ view, identity, url, isNew, refresh }: { view: TripView; identit
                 {members.length - waitingOn.length < 2
                   ? "Below are trip ideas based on your answers so far. They'll change as friends answer. Friends can add themselves from the link."
                   : waitingOn.length
-                    ? `Waiting on ${waitingOn.length} more. Below is an early look based on everyone who's answered so far. Voting opens once everyone's in, or at the deadline.`
-                    : "Everyone has answered. Final options are on their way."}
+                    ? `Waiting on ${waitingOn.length} more. Below is an early look based on everyone who's answered so far. Voting starts when ${isOrganiser ? "you start it" : "the organiser starts it"}, or at the deadline.`
+                    : `Everyone who's joined has answered. Voting starts when ${isOrganiser ? "you start it" : "the organiser starts it"}, or at the deadline. More friends can still join.`}
               </p>
               <p className="mt-3 flex items-center gap-1.5 text-sm">
                 <Clock size={14} className="text-muted" /> {timeLeft(trip.deadline, view.now)}
@@ -237,6 +259,20 @@ function Body({ view, identity, url, isNew, refresh }: { view: TripView; identit
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {isOrganiser && !view.deadlinePassed && !showForm && members.length - waitingOn.length >= 2 && (
+        <div className="card space-y-3 p-5">
+          <p className="font-display text-lg font-bold">Ready to vote?</p>
+          <p className="text-sm text-muted">
+            {members.length - waitingOn.length} of {members.length} have answered. Starting the vote plans the final options from everyone who&apos;s
+            answered. Friends who join later can still add their answers and vote.
+          </p>
+          <button disabled={busy} onClick={() => act("deadline", { action: "proceed" })} className="btn btn-primary px-5 py-3 text-sm">
+            Start voting
+          </button>
+          {actionError && <Notice tone="bad">{actionError}</Notice>}
         </div>
       )}
 
